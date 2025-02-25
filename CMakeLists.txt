@@ -16,6 +16,7 @@ find_package(OpenMP REQUIRED)
 # Set the source and include directories
 set(FEM_SRC_DIR ${CMAKE_SOURCE_DIR}/src)
 set(FEM_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
+set(MATRIX_SRC_DIR ${CMAKE_SOURCE_DIR}/../matrix/src)
 set(MATRIX_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/../matrix/include)
 
 # Include directories (FEM and Matrix)
@@ -26,6 +27,13 @@ include_directories(${FEM_INCLUDE_DIR} ${MATRIX_INCLUDE_DIR})
 set(FEM_SOURCES
     ${FEM_SRC_DIR}/elliptic_solver.c
     ${FEM_SRC_DIR}/mesh.c
+)
+
+set(MATRIX_SOURCES
+    ${MATRIX_SRC_DIR}/matrix_ops.c
+    ${MATRIX_SRC_DIR}/qr.c
+    ${MATRIX_SRC_DIR}/cg.c
+    ${MATRIX_SRC_DIR}/lsqr.c
 )
 
 # Create FEM library
@@ -40,7 +48,7 @@ endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../matrix ${CMAKE_BINARY_DIR}/matrix)
 
 # Include directories for external linking
-target_include_directories(fem_solver PUBLIC ${CMAKE_SOURCE_DIR}/../matrix/include)
+target_include_directories(fem_solver PUBLIC ${MATRIX_INCLUDE_DIR})
 target_link_directories(fem_solver PUBLIC ${CMAKE_BINARY_DIR}/../matrix)
 
 # Link the matrix module (instead of individual files)

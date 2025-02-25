@@ -8,12 +8,11 @@ void generate_mesh(FEMMesh* mesh, int Nx, int Ny) {
     mesh->num_elements = 2 * Nx * Ny; // Two triangles per quadrilateral
     mesh->nodes = (double*)malloc(2 * mesh->num_nodes * sizeof(double));
     mesh->elements = (int*)malloc(3 * mesh->num_elements * sizeof(int));
-    mesh->boundary_nodes = (int*)malloc(4 * (Nx + Ny) * sizeof(int)); // Max possible boundary nodes
+    mesh->boundary_nodes = (int*)malloc(2 * (Nx + Ny) * sizeof(int)); // Max possible boundary nodes
 
     int node_index = 0, element_index = 0, boundary_index = 0;
 
     // Generate nodes (structured grid)
-#pragma omp parallel for collapse(2) reduction(+:boundary_index)
     for (int j = 0; j <= Ny; j++) {
         for (int i = 0; i <= Nx; i++) {
             double x = (double)i / Nx;
@@ -30,8 +29,11 @@ void generate_mesh(FEMMesh* mesh, int Nx, int Ny) {
         }
     }
 
+    // Allocate exact memory for boundary nodes
+    mesh->boundary_nodes = (int*)realloc(mesh->boundary_nodes, boundary_index * sizeof(int));
+    mesh->num_boundary = boundary_index;
+
     // Generate triangular elements (each quadrilateral = 2 triangles)
-#pragma omp parallel for
     for (int j = 0; j < Ny; j++) {
         for (int i = 0; i < Nx; i++) {
             int n1 = j * (Nx + 1) + i;
