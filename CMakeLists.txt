@@ -34,6 +34,7 @@ set(MATRIX_SOURCES
     ${MATRIX_SRC_DIR}/qr.c
     ${MATRIX_SRC_DIR}/cg.c
     ${MATRIX_SRC_DIR}/lsqr.c
+    ${MATRIX_SRC_DIR}/gmres.c
 )
 
 # Create FEM library

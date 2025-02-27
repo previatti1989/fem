@@ -4,34 +4,79 @@
 #include "mesh.h"
 #include "matrix_ops.h"
 #include "elliptic_solver.h"
-#include "qr.h"
-#include "cg.h"
-#include "lsqr.h"
+#include "solvers.h"
 
-// Analytical solution for verification
-double u_exact(double x, double y) {
-    return sin(M_PI * x) * sin(M_PI * y);
-}
-
-// Source function
-double f_function(double x, double y) {
-    return 2 * M_PI * M_PI * sin(M_PI * x) * sin(M_PI * y);
-}
-
-// Nonlinear source function
-double f_nonlinear_function(double x, double y) {
-    double u = u_exact(x, y);
-    double scalar = 1.0;
-    return 2 * M_PI * M_PI * u - scalar * pow(u, 3);
-}
-
-// Constant coefficient k(x,y) = 1
 double k_function(double x, double y) {
     return 1.0;
 }
 
+int nonlinear_scalar = 1.0;
+
+//  Linear Solution: u_exact = sin(pi x) sin(pi y)
+double u_exact_dirichlet(double x, double y) {
+    return sin(M_PI * x) * sin(M_PI * y);
+}
+
+//  Source term for Dirichlet BC: f = 2pi� sin(pix) sin(piy)
+double f_function_dirichlet(double x, double y) {
+    return 2 * M_PI * M_PI * sin(M_PI * x) * sin(M_PI * y);
+}
+
+// Dirichlet BC:
+double g_D_dirichlet(double x, double y) {
+    return u_exact_dirichlet(x, y);
+}
+
+//  Linear Solution: u_exact = x(1-x)y(1-y)
+double u_exact_mixed(double x, double y) {
+    return x * (1 - x) * y * (1 - y);
+}
+
+//  Source term for Mixed BC: f = -2[y(1-y) + x(1-x)]
+double f_function_mixed(double x, double y) {
+    return -2 * (y * (1 - y) + x * (1 - x));
+}
+
+//  Neumann BC
+double g_N_mixed(double x, double y) {
+    return (y == 0) ? -2 * x * (1 - x) : (y == 1) ? 2 * x * (1 - x) : NAN;
+}
+
+//  Dirichlet BC
+double g_D_mixed(double x, double y) {
+    return (x == 0 || x == 1) ? 0.0 : NAN;
+}
+
+//  Nonlinear Poisson Solution: u_exact = sin(pix) sin(piy)
+double u_exact_nonlinear(double x, double y) {
+    return sin(M_PI * x) * sin(M_PI * y);
+}
+
+//  Source term for Nonlinear Poisson: f = 2pi� sin(pix) sin(piy) - k sin�(pix) sin�(piy)
+double f_nonlinear_function(double x, double y) {
+    double u = sin(M_PI * x) * sin(M_PI * y);
+    return 2 * M_PI * M_PI * u - 1.0 * pow(u, 3);  // Assume scalar = 1.0
+}
+
+// Nonlinear Dirichlet BC
+double g_D_nonlinear(double x, double y) {
+    return 0.0;
+}
+
+double g_D_mixed_nonlinear(double x, double y) {
+    return (x == 0 || x == 1) ? 0.0 : NAN; // Only apply Dirichlet on x-boundaries
+}
+
+// Nonlinear Neumann BC
+double g_N_mixed_nonlinear(double x, double y) {
+    if (x == 0 || x == 1) return NAN;  // Dirichlet boundaries
+    if (y == 0) return M_PI * sin(M_PI * x);  // Bottom boundary
+    if (y == 1) return -M_PI * sin(M_PI * x); // Top boundary
+    return NAN;
+}
+
 // Compare numerical solution with exact analytical solution
-void validate_numerical_solution(const FEMMesh* mesh, const FEMVector* numerical_solution) {
+void validate_numerical_solution(const FEMMesh* mesh, const FEMVector* numerical_solution, double (*u_exact)(double, double)) {
     printf("\nComparing FEM solution with analytical solution:\n");
 
     double error_norm = 0.0;
@@ -55,7 +100,7 @@ void validate_numerical_solution(const FEMMesh* mesh, const FEMVector* numerical
     printf("Max Error: %.6e\n", max_error);
 }
 
-void solve_and_validate(FEMMatrix* A, FEMVector* b, FEMVector* u, const FEMMesh* mesh, const char* method) {
+void solve_and_validate(FEMMatrix* A, FEMVector* b, FEMVector* u, const FEMMesh* mesh, const char* method, double (*u_exact)(double, double)) {
     initialize_vector(u, mesh->num_nodes);
     set_vector_zero(u);
 
@@ -71,13 +116,21 @@ void solve_and_validate(FEMMatrix* A, FEMVector* b, FEMVector* u, const FEMMesh*
         printf("\nSolving using LSQR...\n");
         lsqr_solver(A, b, u, 1e-6, 1000);
     }
+    else if (strcmp(method, "GMRES") == 0) {
+        printf("\nSolving using GMRES...\n");
+        int k_max = A->rows;
+        printf("\nSolving GMRES k_max = %d\n", k_max);
+        gmres_solver(A, b, u, 1e-6, 1000, k_max);
+    }
 
-    validate_numerical_solution(mesh, u);
+    validate_numerical_solution(mesh, u, u_exact);
     free_vector(u);
 }
 
 int main() {
     int Nx = 4, Ny = 4;
+    const char* solver_method = "CG";
+
     FEMMesh mesh;
     EllipticFEMSystem fem;
     FEMVector u_solution;
@@ -85,54 +138,54 @@ int main() {
     // Generate mesh
     generate_mesh(&mesh, Nx, Ny);
 
-    // Test for LINEAR Poisson equation
+    //  Dirichlet Poisson Test
     printf("\n==============================\n");
-    printf("Testing LINEAR Poisson Equation:\n");
+    printf("Testing LINEAR Poisson Equation (Dirichlet BC):\n");
     printf("==============================\n");
-    initialize_elliptic_system(&fem, mesh.num_nodes, k_function, f_function, LINEAR, DIRICHLET_ONLY, 0.0);
+    initialize_elliptic_system(&fem, mesh.num_nodes, k_function, f_function_dirichlet, LINEAR, DIRICHLET_ONLY, 0.0);
     assemble_elliptic_stiffness(&fem, &mesh);
     assemble_elliptic_load_vector(&fem, &mesh);
-    apply_elliptic_boundary_conditions(&fem, &mesh);
+    apply_elliptic_boundary_conditions(&fem, &mesh, g_D_dirichlet, NULL);
 
-    // Print stiffness matrix and load vector
-    print_matrix(&fem.stiffness_matrix, "K (Linear)");
-    print_vector(&fem.load_vector, "F (Linear)");
-
-    // Solve using different methods
-    solve_and_validate(&fem.stiffness_matrix, &fem.load_vector, &u_solution, &mesh, "QR");
-    solve_and_validate(&fem.stiffness_matrix, &fem.load_vector, &u_solution, &mesh, "CG");
-    solve_and_validate(&fem.stiffness_matrix, &fem.load_vector, &u_solution, &mesh, "LSQR");
-
+    solve_and_validate(&fem.stiffness_matrix, &fem.load_vector, &u_solution, &mesh, solver_method, u_exact_dirichlet);
     free_elliptic_system(&fem);
 
-    // Test for NONLINEAR Poisson equation
+    //  Mixed Poisson Test
+    printf("\n==============================\n");
+    printf("Testing LINEAR Poisson Equation (Mixed BC):\n");
+    printf("==============================\n");
+    initialize_elliptic_system(&fem, mesh.num_nodes, k_function, f_function_mixed, LINEAR, MIXED_BOUNDARY, 0.0);
+    assemble_elliptic_stiffness(&fem, &mesh);
+    assemble_elliptic_load_vector(&fem, &mesh);
+    apply_elliptic_boundary_conditions(&fem, &mesh, g_D_mixed, g_N_mixed);
+
+    solve_and_validate(&fem.stiffness_matrix, &fem.load_vector, &u_solution, &mesh, solver_method, u_exact_mixed);
+    free_elliptic_system(&fem);
+
+    //  Nonlinear Poisson Test
     printf("\n==============================\n");
     printf("Testing NONLINEAR Poisson Equation:\n");
     printf("==============================\n");
-    initialize_elliptic_system(&fem, mesh.num_nodes, k_function, f_nonlinear_function, NONLINEAR, DIRICHLET_ONLY, 1.0);
+    initialize_elliptic_system(&fem, mesh.num_nodes, k_function, f_nonlinear_function, NONLINEAR, DIRICHLET_ONLY, nonlinear_scalar);
     assemble_elliptic_stiffness(&fem, &mesh);
     assemble_mass_matrix(&fem, &mesh);
     assemble_elliptic_load_vector(&fem, &mesh);
-    apply_elliptic_boundary_conditions(&fem, &mesh);
+    apply_elliptic_boundary_conditions(&fem, &mesh, g_D_nonlinear, NULL);
 
-    // Placeholder initial guess for U (can be improved)
-    FEMVector u_guess;
-    initialize_vector(&u_guess, mesh.num_nodes);
-    set_vector_zero(&u_guess);
-
-    // Apply nonlinear stiffness modification
-    apply_nonlinear_stiffness(&fem, &u_guess);
-
-    // Print matrices for debugging
-    print_matrix(&fem.stiffness_matrix, "K (Nonlinear Modified)");
-    print_matrix(&fem.mass_matrix, "M (Nonlinear)");
-    print_vector(&fem.load_vector, "F (Nonlinear)");
-
-    solve_and_validate(&fem.stiffness_matrix, &fem.load_vector, &u_solution, &mesh, "QR");
+    solve_and_validate(&fem.stiffness_matrix, &fem.load_vector, &u_solution, &mesh, solver_method, u_exact_nonlinear);
     free_elliptic_system(&fem);
 
-    free_vector(&u_guess);
+    //  Nonlinear Poisson Test
+    printf("\n==============================\n");
+    printf("Testing NONLINEAR Poisson Equation:\n");
+    printf("==============================\n");
+    initialize_elliptic_system(&fem, mesh.num_nodes, k_function, f_nonlinear_function, NONLINEAR, MIXED_BOUNDARY, nonlinear_scalar);
+    assemble_elliptic_stiffness(&fem, &mesh);
+    assemble_mass_matrix(&fem, &mesh);
+    assemble_elliptic_load_vector(&fem, &mesh);
+    apply_elliptic_boundary_conditions(&fem, &mesh, g_D_mixed_nonlinear, g_N_mixed_nonlinear);
+
+    solve_and_validate(&fem.stiffness_matrix, &fem.load_vector, &u_solution, &mesh, solver_method, u_exact_nonlinear);
     free_elliptic_system(&fem);
-    free_mesh(&mesh);
-    return 0;
+
 }

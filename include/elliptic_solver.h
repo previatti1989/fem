@@ -43,7 +43,7 @@ void assemble_mass_matrix(EllipticFEMSystem* fem, const FEMMesh* mesh);
 void assemble_elliptic_load_vector(EllipticFEMSystem* fem, const FEMMesh* mesh);
 
 // Apply selected boundary conditions
-void apply_elliptic_boundary_conditions(EllipticFEMSystem* fem, const FEMMesh* mesh);
+void apply_elliptic_boundary_conditions(EllipticFEMSystem* fem, const FEMMesh* mesh, double(*g_D)(double, double), double (*g_N)(double, double));
 
 // Apply nonlinear modification
 void apply_nonlinear_stiffness(EllipticFEMSystem* fem, const FEMVector* u);
